@@ -25,12 +25,22 @@ Validate a single email address and get detailed results.
 **Output Fields:**
 - `valid` - Whether the email is valid (true/false)
 - `disposable` - Whether it's a disposable email (true/false)
-- `mx_valid` - Whether domain has MX records (true/false)
-- `risk` - Risk level (low, medium, high, critical)
-- `risk_score` - Risk score from 0-100
+- `scam_domain` - Whether the domain is flagged as scam/phishing (true/false)
+- `mx_exists` - Whether domain has MX records (true/false)
+- `blacklisted_mx` - Whether MX server IPs are on a DNSBL blacklist (true/false)
+- `free_email` - Whether it's a free email provider (true/false)
+- `risk_score` - Risk level (low, medium, high, critical)
+- `risk_factors` - List of risk factors detected
+- `deliverability_score` - Deliverability likelihood score (0-100)
 - `domain` - The email domain
-- `reason` - Reason if invalid
-- `suggestion` - Suggested correction for typos
+- `email_provider` - Detected provider name (e.g. Gmail, Outlook)
+- `spf` - SPF authentication result (pass, fail, none)
+- `dmarc` - DMARC policy result (pass, fail, none)
+- `normalized_email` - Email after provider-specific normalization
+- `is_aliased` - Whether the email uses aliasing (true/false)
+- `alias_type` - Type of alias (plus_addressing, dot_variation, subdomain_addressing, provider_alias)
+- `did_you_mean` - Suggested correction for domain typos
+- `reason` - Human-readable explanation (when applicable)
 
 ### Check Disposable
 
@@ -48,35 +58,42 @@ Quick check if an email is from a disposable provider.
 
 **Trigger:** New form submission (Typeform, Google Forms, etc.)
 **Action:** Mailchk - Validate Email
-**Filter:** Only continue if valid = true AND disposable = false
+**Filter:** Only continue if valid = true AND disposable = false AND scam_domain = false
 **Action:** Add to CRM or email list
 
 ### 2. Clean Email Lists
 
 **Trigger:** New row in Google Sheets
 **Action:** Mailchk - Validate Email
-**Action:** Update row with validation results
+**Action:** Update row with validation results (risk_score, deliverability_score, spf, dmarc)
 
 ### 3. Lead Qualification
 
 **Trigger:** New HubSpot contact
 **Action:** Mailchk - Validate Email
-**Filter:** Block if risk = high or risk = critical
-**Action:** Update contact with risk score
+**Filter:** Block if risk_score = high or risk_score = critical
+**Action:** Update contact with deliverability_score and risk_score
 
 ### 4. E-commerce Fraud Prevention
 
 **Trigger:** New Shopify order
 **Action:** Mailchk - Validate Email
-**Action:** Flag order if disposable = true
+**Action:** Flag order if disposable = true OR scam_domain = true
+
+### 5. Detect Email Aliasing
+
+**Trigger:** New user signup
+**Action:** Mailchk - Validate Email
+**Filter:** Check if is_aliased = true
+**Action:** Log the normalized_email and alias_type for duplicate detection
 
 ## Setup Guide
 
 ### Step 1: Get Your API Key
 
 1. Log in to [Mailchk](https://mailchk.io)
-2. Go to Settings > API Keys
-3. Copy your API key
+2. Go to Dashboard > API Keys
+3. Create and copy your API key
 
 ### Step 2: Connect to Zapier
 
@@ -103,16 +120,18 @@ Add a Filter step after Mailchk to route emails based on validation results:
 Only continue if:
 - valid equals true
 - AND disposable equals false
-- AND risk does not equal critical
+- AND scam_domain equals false
+- AND risk_score does not equal critical
 ```
 
 ### Store Validation Results
 
 Save validation results back to your source for future reference:
 
-- Update the original record with risk score
-- Add tags for disposable or high-risk emails
-- Create a separate log of all validations
+- Update the original record with risk_score and deliverability_score
+- Add tags for disposable, scam, or high-risk emails
+- Store SPF/DMARC results for domain reputation tracking
+- Log normalized_email for alias deduplication
 
 ### Handle Failures Gracefully
 
@@ -120,7 +139,8 @@ Add a Paths step to handle different outcomes:
 
 - **Path A:** Valid email → Continue processing
 - **Path B:** Invalid email → Send notification
-- **Path C:** Disposable email → Flag for review
+- **Path C:** Disposable or scam email → Flag for review
+- **Path D:** Low deliverability_score → Route to manual review
 
 ## Rate Limits
 
